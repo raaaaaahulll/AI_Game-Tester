@@ -1,0 +1,234 @@
+"""
+API routes for the AI Game Testing System.
+
+All endpoints maintain backward compatibility with the existing API contract.
+"""
+from typing import Dict, Any
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel, Field, field_validator
+
+from backend.rl_controller import rl_controller
+from backend.analytics.metrics_collector import metrics_collector
+from backend.core.exceptions import (
+    TestingSessionAlreadyRunningError,
+    TestingSessionNotRunningError,
+    InvalidGenreError,
+    MetricsError,
+)
+from backend.core.logging_config import get_logger
+
+logger = get_logger(__name__)
+router = APIRouter()
+
+
+# Valid genre values
+VALID_GENRES = {"platformer", "fps", "racing", "rpg"}
+
+
+class StartRequest(BaseModel):
+    """Request model for starting a test session."""
+    
+    genre: str = Field(
+        ...,
+        description="Game genre to test",
+        examples=["platformer", "fps", "racing", "rpg"]
+    )
+    
+    @field_validator("genre")
+    @classmethod
+    def validate_genre(cls, v: str) -> str:
+        """Validate genre value."""
+        genre_lower = v.lower()
+        if genre_lower not in VALID_GENRES:
+            raise ValueError(
+                f"Invalid genre '{v}'. Must be one of: {', '.join(VALID_GENRES)}"
+            )
+        return genre_lower
+
+
+class SuccessResponse(BaseModel):
+    """Standard success response model."""
+    
+    status: str = Field(default="success", description="Response status")
+    message: str = Field(..., description="Human-readable message")
+
+
+class StatusResponse(BaseModel):
+    """Status response model."""
+    
+    status: str = Field(..., description="Current system status")
+
+
+@router.post(
+    "/start-test",
+    response_model=SuccessResponse,
+    summary="Start game testing session",
+    description="Initiates a new game testing session with the specified game genre.",
+    responses={
+        200: {
+            "description": "Testing session started successfully",
+            "model": SuccessResponse
+        },
+        400: {
+            "description": "Bad request - Invalid genre or testing already in progress"
+        }
+    }
+)
+async def start_test(request: StartRequest) -> Dict[str, str]:
+    """
+    Start a game testing session.
+    
+    Args:
+        request: Start request containing the game genre
+        
+    Returns:
+        Success response with status and message
+        
+    Raises:
+        HTTPException: If test cannot be started (already running or invalid genre)
+    """
+    logger.info(
+        f"Starting test for genre: {request.genre}",
+        extra={"extra_fields": {"genre": request.genre}}
+    )
+    
+    try:
+        success, msg = rl_controller.start_test(request.genre)
+        if not success:
+            logger.warning(f"Failed to start test: {msg}")
+            raise HTTPException(status_code=400, detail=msg)
+        
+        logger.info(f"Test started successfully: {msg}")
+        return {"status": "success", "message": msg}
+        
+    except InvalidGenreError as e:
+        logger.warning(f"Invalid genre: {e.message}")
+        raise HTTPException(status_code=400, detail=e.message)
+    except TestingSessionAlreadyRunningError as e:
+        logger.warning(f"Test already running: {e.message}")
+        raise HTTPException(status_code=400, detail=e.message)
+    except Exception as e:
+        logger.error(f"Unexpected error starting test: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@router.post(
+    "/stop-test",
+    response_model=SuccessResponse,
+    summary="Stop game testing session",
+    description="Stops the currently running game testing session.",
+    responses={
+        200: {
+            "description": "Testing session stopped successfully",
+            "model": SuccessResponse
+        },
+        400: {
+            "description": "Bad request - No active testing session"
+        }
+    }
+)
+async def stop_test() -> Dict[str, str]:
+    """
+    Stop the current game testing session.
+    
+    Returns:
+        Success response with status and message
+        
+    Raises:
+        HTTPException: If no test is currently running
+    """
+    logger.info("Stopping test session")
+    
+    try:
+        success, msg = rl_controller.stop_test()
+        if not success:
+            logger.warning(f"Failed to stop test: {msg}")
+            raise HTTPException(status_code=400, detail=msg)
+        
+        logger.info(f"Test stopped successfully: {msg}")
+        return {"status": "success", "message": msg}
+        
+    except TestingSessionNotRunningError as e:
+        logger.warning(f"No test running: {e.message}")
+        raise HTTPException(status_code=400, detail=e.message)
+    except Exception as e:
+        logger.error(f"Unexpected error stopping test: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@router.get(
+    "/metrics",
+    summary="Get all testing metrics",
+    description="Retrieves comprehensive metrics for the current testing session.",
+    responses={
+        200: {
+            "description": "Metrics retrieved successfully",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "coverage": 1250.5,
+                        "crashes": 3,
+                        "fps": 60.0,
+                        "current_algorithm": "PPO",
+                        "status": "Training",
+                        "total_steps": 15420,
+                        "reward_mean": 0.85
+                    }
+                }
+            }
+        },
+        500: {
+            "description": "Internal server error"
+        }
+    }
+)
+async def get_metrics() -> Dict[str, Any]:
+    """
+    Get all current testing metrics.
+    
+    Returns:
+        Dictionary containing all metrics (coverage, crashes, fps, etc.)
+        
+    Raises:
+        HTTPException: If metrics cannot be retrieved
+    """
+    try:
+        metrics = metrics_collector.get_all()
+        return metrics
+    except Exception as e:
+        logger.error(f"Error retrieving metrics: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to retrieve metrics")
+
+
+@router.get(
+    "/status",
+    response_model=StatusResponse,
+    summary="Get system status",
+    description="Retrieves only the current status of the testing system.",
+    responses={
+        200: {
+            "description": "Status retrieved successfully",
+            "model": StatusResponse
+        },
+        500: {
+            "description": "Internal server error"
+        }
+    }
+)
+async def get_status() -> Dict[str, str]:
+    """
+    Get the current system status.
+    
+    Returns:
+        Dictionary with current status
+        
+    Raises:
+        HTTPException: If status cannot be retrieved
+    """
+    try:
+        metrics = metrics_collector.get_all()
+        status = metrics.get("status", "Unknown")
+        return {"status": status}
+    except Exception as e:
+        logger.error(f"Error retrieving status: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to retrieve status")

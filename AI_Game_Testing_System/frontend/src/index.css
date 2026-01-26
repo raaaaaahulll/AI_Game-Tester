@@ -1,0 +1,35 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+    body {
+        @apply bg-[#141414] text-white antialiased;
+        font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    }
+}
+
+.glass-panel {
+    @apply bg-black/40 backdrop-blur-md border-b border-white/10;
+}
+
+.glass-card {
+    @apply bg-[#1f1f1f] border border-white/10 rounded-md shadow-lg transition-colors duration-300;
+}
+
+.glass-card:hover {
+    @apply border-white/30;
+}
+
+.brand-red {
+    @apply text-[#E50914];
+}
+
+.bg-brand-red {
+    @apply bg-[#E50914];
+}
+
+/* Cinematic Fade */
+.vignette {
+    background: radial-gradient(circle, transparent 50%, black 150%);
+}

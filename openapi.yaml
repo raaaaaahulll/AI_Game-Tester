@@ -1,0 +1,398 @@
+openapi: 3.0.3
+info:
+  title: AI Game Testing System API
+  description: |
+    RESTful API for the AI Game Testing System. This API provides endpoints to control
+    and monitor autonomous game testing agents powered by Reinforcement Learning algorithms
+    (PPO, DQN, SAC, HRL).
+    
+    The system enables automated game testing with real-time metrics collection including
+    state coverage, crash detection, performance monitoring, and algorithm tracking.
+  version: 1.0.0
+  contact:
+    name: AI Game Testing System
+    email: support@example.com
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: http://localhost:8000
+    description: Local development server
+  - url: http://0.0.0.0:8000
+    description: Production server (all interfaces)
+
+tags:
+  - name: Testing Control
+    description: Endpoints for starting and stopping game testing sessions
+  - name: Metrics
+    description: Endpoints for retrieving testing metrics and status
+  - name: Health
+    description: Health check and system status endpoints
+
+paths:
+  /api/start-test:
+    post:
+      tags:
+        - Testing Control
+      summary: Start game testing session
+      description: |
+        Initiates a new game testing session with the specified game genre.
+        The system will begin autonomous testing using Reinforcement Learning agents.
+      operationId: startTest
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StartTestRequest'
+            examples:
+              platformer:
+                summary: Platformer game
+                value:
+                  genre: "platformer"
+              fps:
+                summary: First-person shooter
+                value:
+                  genre: "fps"
+              racing:
+                summary: Racing game
+                value:
+                  genre: "racing"
+              rpg:
+                summary: Role-playing game
+                value:
+                  genre: "rpg"
+      responses:
+        '200':
+          description: Testing session started successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+              examples:
+                success:
+                  summary: Successful start
+                  value:
+                    status: "success"
+                    message: "Testing started for genre: platformer"
+        '400':
+          description: Bad request - Invalid genre or testing already in progress
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                invalid_genre:
+                  summary: Invalid genre
+                  value:
+                    detail: "Invalid genre specified"
+                already_running:
+                  summary: Already running
+                  value:
+                    detail: "Testing is already in progress"
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/stop-test:
+    post:
+      tags:
+        - Testing Control
+      summary: Stop game testing session
+      description: |
+        Stops the currently running game testing session.
+        All active agents will be terminated and metrics will be saved.
+      operationId: stopTest
+      requestBody:
+        required: false
+      responses:
+        '200':
+          description: Testing session stopped successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+              examples:
+                success:
+                  summary: Successful stop
+                  value:
+                    status: "success"
+                    message: "Testing stopped successfully"
+        '400':
+          description: Bad request - No active testing session
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                not_running:
+                  summary: Not running
+                  value:
+                    detail: "No active testing session to stop"
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/metrics:
+    get:
+      tags:
+        - Metrics
+      summary: Get all testing metrics
+      description: |
+        Retrieves comprehensive metrics for the current testing session.
+        Includes coverage statistics, crash counts, performance metrics,
+        active algorithm information, and training progress.
+        
+        This endpoint is typically polled at regular intervals (e.g., every 1 second)
+        for real-time dashboard updates.
+      operationId: getMetrics
+      responses:
+        '200':
+          description: Metrics retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MetricsResponse'
+              examples:
+                idle:
+                  summary: System idle
+                  value:
+                    coverage: 0.0
+                    crashes: 0
+                    fps: 0.0
+                    current_algorithm: "None"
+                    status: "Idle"
+                    total_steps: 0
+                    reward_mean: 0.0
+                active:
+                  summary: Active testing session
+                  value:
+                    coverage: 1250.5
+                    crashes: 3
+                    fps: 60.0
+                    current_algorithm: "PPO"
+                    status: "Training"
+                    total_steps: 15420
+                    reward_mean: 0.85
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/status:
+    get:
+      tags:
+        - Metrics
+      summary: Get system status
+      description: |
+        Retrieves only the current status of the testing system.
+        This is a lightweight endpoint for quick status checks.
+      operationId: getStatus
+      responses:
+        '200':
+          description: Status retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusResponse'
+              examples:
+                idle:
+                  summary: System idle
+                  value:
+                    status: "Idle"
+                training:
+                  summary: Training in progress
+                  value:
+                    status: "Training"
+                unknown:
+                  summary: Unknown status
+                  value:
+                    status: "Unknown"
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /:
+    get:
+      tags:
+        - Health
+      summary: Health check
+      description: |
+        Simple health check endpoint to verify the API server is running.
+        Returns a welcome message.
+      operationId: healthCheck
+      responses:
+        '200':
+          description: Server is running
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+              examples:
+                running:
+                  summary: Server running
+                  value:
+                    message: "AI Game Testing System Backend is Running"
+
+components:
+  schemas:
+    StartTestRequest:
+      type: object
+      required:
+        - genre
+      properties:
+        genre:
+          type: string
+          enum:
+            - platformer
+            - fps
+            - racing
+            - rpg
+          description: Game genre to test
+          example: "platformer"
+      additionalProperties: false
+
+    SuccessResponse:
+      type: object
+      required:
+        - status
+        - message
+      properties:
+        status:
+          type: string
+          enum:
+            - success
+          description: Response status
+          example: "success"
+        message:
+          type: string
+          description: Human-readable message describing the result
+          example: "Testing started for genre: platformer"
+      additionalProperties: false
+
+    ErrorResponse:
+      type: object
+      required:
+        - detail
+      properties:
+        detail:
+          type: string
+          description: Error message describing what went wrong
+          example: "Invalid genre specified"
+      additionalProperties: false
+
+    MetricsResponse:
+      type: object
+      required:
+        - coverage
+        - crashes
+        - fps
+        - current_algorithm
+        - status
+        - total_steps
+        - reward_mean
+      properties:
+        coverage:
+          type: number
+          format: float
+          description: State coverage percentage - number of unique game states discovered
+          example: 1250.5
+          minimum: 0
+        crashes:
+          type: integer
+          format: int32
+          description: Number of crashes or freezes detected during testing
+          example: 3
+          minimum: 0
+        fps:
+          type: number
+          format: float
+          description: Current frames per second during testing
+          example: 60.0
+          minimum: 0
+        current_algorithm:
+          type: string
+          description: Name of the currently active Reinforcement Learning algorithm
+          enum:
+            - None
+            - PPO
+            - DQN
+            - SAC
+            - HRL
+          example: "PPO"
+        status:
+          type: string
+          description: Current system status
+          enum:
+            - Idle
+            - Training
+            - Stopping
+            - Error
+            - Unknown
+          example: "Training"
+        total_steps:
+          type: integer
+          format: int32
+          description: Total number of training steps executed
+          example: 15420
+          minimum: 0
+        reward_mean:
+          type: number
+          format: float
+          description: Mean reward value across recent training episodes
+          example: 0.85
+      additionalProperties: false
+
+    StatusResponse:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          description: Current system status
+          enum:
+            - Idle
+            - Training
+            - Stopping
+            - Error
+            - Unknown
+          example: "Training"
+      additionalProperties: false
+
+    HealthResponse:
+      type: object
+      required:
+        - message
+      properties:
+        message:
+          type: string
+          description: Health check message
+          example: "AI Game Testing System Backend is Running"
+      additionalProperties: false
+
+  securitySchemes:
+    # Currently no authentication required
+    # This section can be expanded when authentication is added
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for authentication (not currently implemented)
+
+# Security can be applied globally or per-endpoint when implemented
+# security:
+#   - ApiKeyAuth: []
+
