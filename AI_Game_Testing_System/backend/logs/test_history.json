@@ -1,5 +1,37 @@
 [
   {
+    "id": "5d556351-6183-4017-bd0b-7f1921b9fc7f",
+    "timestamp": "2026-01-27T05:07:15.379220",
+    "genre": "racing",
+    "algorithm": "SACAgent",
+    "status": "Error",
+    "duration_seconds": 0.03308701515197754,
+    "metrics": {
+      "coverage": 0.0,
+      "crashes": 0,
+      "fps": 0.0,
+      "total_steps": 0,
+      "reward_mean": 0.0
+    },
+    "notes": "Failed to initialize RL agent: Unable to allocate 5.26 GiB for an array with shape (50000, 1, 4, 84, 84) and data type float32"
+  },
+  {
+    "id": "9f055e66-2bd8-4010-887e-31a87a199c36",
+    "timestamp": "2026-01-27T05:07:01.516407",
+    "genre": "racing",
+    "algorithm": "SACAgent",
+    "status": "Error",
+    "duration_seconds": 0.26616930961608887,
+    "metrics": {
+      "coverage": 0.0,
+      "crashes": 0,
+      "fps": 0.0,
+      "total_steps": 0,
+      "reward_mean": 0.0
+    },
+    "notes": "Failed to initialize RL agent: Unable to allocate 5.26 GiB for an array with shape (50000, 1, 4, 84, 84) and data type float32"
+  },
+  {
     "id": "6020fd3d-6ab8-4b5e-b4d9-02219e8a6699",
     "timestamp": "2026-01-26T10:29:04.975538",
     "genre": "platformer",

@@ -24,9 +24,6 @@ const HeroControlPanel = ({
             </div>
 
             <div className="relative z-20 max-w-2xl">
-                <div className="flex items-center gap-2 mb-2">
-                    <span className="text-[#E50914] font-bold tracking-widest text-xs uppercase">N SERIES • AUTOMATION</span>
-                </div>
                 <h1 className="text-5xl md:text-6xl font-black mb-4 tracking-tighter text-white drop-shadow-lg">
                     GAME TESTER <span className="text-[#E50914]">PRO</span>
                 </h1>

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { startTest, stopTest, getMetrics, resetStatus } from '../services/api';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { AlertOctagon, Layers, Cpu, Film, RefreshCw } from 'lucide-react';
+import { AlertOctagon, Layers, Cpu, Film, RefreshCw, LogOut } from 'lucide-react';
 import { motion } from 'framer-motion';
 import HeroControlPanel from './HeroControlPanel';
 
@@ -28,7 +28,7 @@ const MetricCard = ({ title, value, icon: Icon, color, subValue }) => (
     </motion.div>
 );
 
-const Dashboard = () => {
+const Dashboard = ({ onLogout }) => {
     const [status, setStatus] = useState("Idle");
     const [genre, setGenre] = useState("platformer");
     const [selectedWindow, setSelectedWindow] = useState(null);
@@ -119,8 +119,18 @@ const Dashboard = () => {
             <nav className="fixed top-0 w-full z-50 transition-all duration-300 bg-gradient-to-b from-black/80 to-transparent pb-6 pt-4 px-8">
                 <div className="max-w-7xl mx-auto flex items-center justify-between">
                     <div className="flex items-center gap-1">
-                        <span className="text-[#E50914] font-bold text-3xl tracking-tighter">ANTIGRAVITY</span>
+                        <span className="text-[#E50914] font-bold text-3xl tracking-tighter">PROJECTX</span>
                     </div>
+                    {onLogout && (
+                        <button
+                            onClick={onLogout}
+                            className="px-4 py-2 bg-[#E50914]/20 hover:bg-[#E50914]/30 border border-[#E50914]/50 text-white rounded font-semibold flex items-center gap-2 transition-colors text-sm"
+                            title="Logout"
+                        >
+                            <LogOut size={16} />
+                            <span>Logout</span>
+                        </button>
+                    )}
                 </div>
             </nav>
 

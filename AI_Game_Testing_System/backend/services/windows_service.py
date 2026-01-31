@@ -56,33 +56,61 @@ class WindowsService:
                 def enum_windows_callback(hwnd, windows_list):
                     """Callback for enumerating windows."""
                     try:
-                        if self._win32gui.IsWindowVisible(hwnd):
-                            window_title = self._win32gui.GetWindowText(hwnd)
-                            # Accept windows with or without titles
+                        # Check if window exists and is valid
+                        if not self._win32gui.IsWindow(hwnd):
+                            return True
+                        
+                        # Check if it's a top-level window (has no parent or parent is desktop)
+                        parent = self._win32gui.GetParent(hwnd)
+                        if parent != 0:
+                            # Has a parent, skip child windows
+                            return True
+                        
+                        # Only include visible windows OR minimized windows
+                        # Exclude hidden/background windows
+                        is_visible = self._win32gui.IsWindowVisible(hwnd)
+                        is_minimized = self._win32gui.IsIconic(hwnd)
+                        
+                        # Skip if window is neither visible nor minimized
+                        if not (is_visible or is_minimized):
+                            return True
+                        
+                        window_title = self._win32gui.GetWindowText(hwnd)
+                        
+                        try:
+                            _, pid = self._win32process.GetWindowThreadProcessId(hwnd)
+                            
+                            # Skip if we've already seen this PID (to avoid duplicates)
+                            if pid in seen_pids:
+                                return True
+                            
+                            # Try to get process info
                             try:
-                                _, pid = self._win32process.GetWindowThreadProcessId(hwnd)
-                                
-                                # Skip if we've already seen this PID
-                                if pid in seen_pids:
-                                    return True
-                                seen_pids.add(pid)
-                                
                                 process = psutil.Process(pid)
                                 exe_path = process.exe()
                                 process_name = process.name()
-                                
-                                # Use process name as title if window title is empty
-                                display_title = window_title.strip() if window_title and window_title.strip() else process_name
-                                
-                                windows_list.append({
-                                    "title": display_title,
-                                    "process_name": process_name,
-                                    "exe_path": exe_path,
-                                    "pid": pid,
-                                    "hwnd": hwnd
-                                })
-                            except (psutil.NoSuchProcess, psutil.AccessDenied, Exception) as e:
-                                logger.debug(f"Skipping window {hwnd}: {e}")
+                            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                                # If we can't get process info, skip this window
+                                return True
+                            
+                            # Use window title if available, otherwise use process name
+                            display_title = window_title.strip() if window_title and window_title.strip() else process_name
+                            
+                            # Skip if we have neither title nor process name
+                            if not display_title:
+                                return True
+                            
+                            seen_pids.add(pid)
+                            
+                            windows_list.append({
+                                "title": display_title,
+                                "process_name": process_name,
+                                "exe_path": exe_path,
+                                "pid": pid,
+                                "hwnd": hwnd
+                            })
+                        except (psutil.NoSuchProcess, psutil.AccessDenied, Exception) as e:
+                            logger.debug(f"Skipping window {hwnd}: {e}")
                     except Exception as e:
                         logger.debug(f"Error processing window {hwnd}: {e}")
                     return True
