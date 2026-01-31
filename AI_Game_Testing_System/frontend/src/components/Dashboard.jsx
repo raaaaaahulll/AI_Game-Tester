@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { startTest, stopTest, getMetrics, resetStatus } from '../services/api';
+import { startTest, stopTest, getMetrics, resetStatus, focusWindow } from '../services/api';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { AlertOctagon, Layers, Cpu, Film, RefreshCw, LogOut } from 'lucide-react';
 import { motion } from 'framer-motion';
@@ -76,6 +76,18 @@ const Dashboard = ({ onLogout }) => {
     const handleStart = async () => {
         try {
             setErrorMessage(""); // Clear previous errors
+            
+            // Focus the selected window before starting the test
+            if (selectedWindow?.hwnd) {
+                try {
+                    await focusWindow(selectedWindow.hwnd);
+                    console.log(`Focused window: ${selectedWindow.title}`);
+                } catch (error) {
+                    console.warn("Failed to focus window:", error);
+                    // Continue with test even if focus fails
+                }
+            }
+            
             const windowHwnd = selectedWindow?.hwnd || null;
             await startTest(genre, windowHwnd); 
         } catch (e) {

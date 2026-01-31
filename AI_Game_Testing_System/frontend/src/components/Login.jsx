@@ -1,11 +1,10 @@
 import React, { useState } from 'react';
-import { Eye, EyeOff, LogIn, Mail, User, Lock } from 'lucide-react';
+import { Eye, EyeOff, LogIn, User, Lock } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 const Login = ({ onLogin, onSwitchToRegister }) => {
     const [formData, setFormData] = useState({
-        username: '',
-        email: '',
+        emailOrUsername: '',
         password: ''
     });
     const [showPassword, setShowPassword] = useState(false);
@@ -25,27 +24,21 @@ const Login = ({ onLogin, onSwitchToRegister }) => {
         e.preventDefault();
         
         // Validation
-        if (!formData.username.trim() || !formData.email.trim() || !formData.password.trim()) {
+        if (!formData.emailOrUsername.trim() || !formData.password.trim()) {
             setError('Please fill in all fields');
             return;
         }
 
-        // Basic email validation
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if (!emailRegex.test(formData.email)) {
-            setError('Please enter a valid email address');
-            return;
-        }
-
-        // Check if user exists in localStorage
+        // Check if user exists in localStorage - match by email OR username
         const users = JSON.parse(localStorage.getItem('registeredUsers') || '[]');
+        const inputValue = formData.emailOrUsername.trim().toLowerCase();
         const user = users.find(u => 
-            (u.username === formData.username || u.email === formData.email) && 
+            (u.email.toLowerCase() === inputValue || u.username.toLowerCase() === inputValue) && 
             u.password === formData.password
         );
 
         if (!user) {
-            setError('Invalid username/email or password');
+            setError('Invalid email/username or password');
             return;
         }
 
@@ -82,40 +75,21 @@ const Login = ({ onLogin, onSwitchToRegister }) => {
                 {/* Login Form */}
                 <div className="glass-card p-8">
                     <form onSubmit={handleSubmit} className="space-y-6">
-                        {/* Username Field */}
+                        {/* Email or Username Field */}
                         <div>
-                            <label htmlFor="username" className="block text-sm font-semibold text-gray-300 mb-2">
-                                Username
+                            <label htmlFor="emailOrUsername" className="block text-sm font-semibold text-gray-300 mb-2">
+                                Email or Username
                             </label>
                             <div className="relative">
                                 <User className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
                                 <input
                                     type="text"
-                                    id="username"
-                                    name="username"
-                                    value={formData.username}
+                                    id="emailOrUsername"
+                                    name="emailOrUsername"
+                                    value={formData.emailOrUsername}
                                     onChange={handleChange}
                                     className="w-full bg-black/50 border border-white/30 text-white rounded px-10 py-3 focus:outline-none focus:border-[#E50914] transition-colors"
-                                    placeholder="Enter your username"
-                                />
-                            </div>
-                        </div>
-
-                        {/* Email Field */}
-                        <div>
-                            <label htmlFor="email" className="block text-sm font-semibold text-gray-300 mb-2">
-                                Email
-                            </label>
-                            <div className="relative">
-                                <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
-                                <input
-                                    type="email"
-                                    id="email"
-                                    name="email"
-                                    value={formData.email}
-                                    onChange={handleChange}
-                                    className="w-full bg-black/50 border border-white/30 text-white rounded px-10 py-3 focus:outline-none focus:border-[#E50914] transition-colors"
-                                    placeholder="Enter your email"
+                                    placeholder="Enter your email or username"
                                 />
                             </div>
                         </div>

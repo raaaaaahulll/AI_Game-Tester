@@ -17,19 +17,21 @@ class SACAgent(BaseRLAgent):
     def __init__(self, env, config):
         super().__init__(env, config)
         # SAC requires Continuous Action Space
+        # Memory-optimized configuration for systems with limited RAM
         self.model = SAC(
             "CnnPolicy", 
             env, 
             verbose=1,
             learning_rate=3e-4,
-            buffer_size=10000,  # Reduced from 50000 to save memory (was causing 5.26 GiB allocation)
-            learning_starts=500,  # Reduced proportionally
-            batch_size=64,
+            buffer_size=2000,  # Significantly reduced to ~200 MB (from 1.05 GiB)
+            learning_starts=100,  # Reduced proportionally
+            batch_size=16,  # Smaller batch size to save memory
             tau=0.005,
             gamma=0.99,
             train_freq=1,
             gradient_steps=1,
             ent_coef='auto',
+            policy_kwargs=dict(normalize_images=False),  # Images are already normalized to [0, 1] in StateProcessor
             tensorboard_log=self.config.get("log_dir")
         )
 

@@ -33,6 +33,26 @@ class Settings(BaseSettings):
         """Path to metrics JSON file."""
         return self.LOGS_DIR / "metrics.json"
     
+    @property
+    def DATABASE_PATH(self) -> Path:
+        """Path to SQLite database file."""
+        return self.LOGS_DIR / "test_history.db"
+    
+    @property
+    def SCREENSHOTS_DIR(self) -> Path:
+        """Path to screenshots directory."""
+        return self.LOGS_DIR / "screenshots"
+    
+    @property
+    def BUGS_DIR(self) -> Path:
+        """Path to bug/issue screenshots directory."""
+        return self.SCREENSHOTS_DIR / "bugs"
+    
+    @property
+    def GAME_SCREENSHOTS_DIR(self) -> Path:
+        """Path to game screenshots directory."""
+        return self.SCREENSHOTS_DIR / "game"
+    
     # Screen Capture Settings
     SCREEN_TOP: int = Field(default=0, description="Top coordinate for screen capture")
     SCREEN_LEFT: int = Field(default=0, description="Left coordinate for screen capture")

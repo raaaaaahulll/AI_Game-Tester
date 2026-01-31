@@ -1,19 +1,14 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import Dashboard from './components/Dashboard';
 import Login from './components/Login';
 import Register from './components/Register';
-import { isAuthenticated, getAuth } from './utils/auth';
 
 function App() {
   const [auth, setAuth] = useState(null);
   const [showRegister, setShowRegister] = useState(false);
 
-  useEffect(() => {
-    // Check if user is already authenticated
-    if (isAuthenticated()) {
-      setAuth(getAuth());
-    }
-  }, []);
+  // Removed auto-authentication check - always show login page first
+  // User must explicitly log in each time
 
   const handleLogin = (authData) => {
     setAuth(authData);

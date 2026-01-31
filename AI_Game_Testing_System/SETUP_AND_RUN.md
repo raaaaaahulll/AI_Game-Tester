@@ -166,7 +166,7 @@ npm list --depth=0
 1. Open a new PowerShell window
 2. Navigate to the backend directory:
    ```powershell
-   cd "C:\Users\DELL\Desktop\antigravity copy\AntiGravity_4\AI_Game_Testing_System\backend"
+   cd "C:\Users\DELL\Desktop\antigravity copy\AI_Game Tester\AI_Game_Testing_System\backend"
    ```
    *(Adjust the path to match your project location)*
 
@@ -215,7 +215,7 @@ Backend will be available at: **http://localhost:8000**
 1. Open a **NEW** PowerShell window (don't close the first one!)
 2. Navigate to the frontend directory:
    ```powershell
-   cd "C:\Users\DELL\Desktop\antigravity copy\AntiGravity_4\AI_Game_Testing_System\frontend"
+   cd "C:\Users\DELL\Desktop\antigravity copy\AI_Game Tester\AI_Game_Testing_System\frontend"
    ```
 
 3. Run the frontend:

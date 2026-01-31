@@ -25,12 +25,12 @@ class StateProcessor:
             frame (np.ndarray): BGR Image from ScreenCapture.
             
         Returns:
-            np.ndarray: Stacked frames in channel-last format (H, W, C).
-            Returns (Height, Width, Stack_Size) normalized to [0, 1].
-            This format is required by Stable-Baselines3 CnnPolicy.
+            np.ndarray: Stacked frames in channel-first format (C, H, W).
+            Returns (Stack_Size, Height, Width) normalized to [0, 1].
+            This format is required by Stable-Baselines3 CnnPolicy (NatureCNN).
         """
         if frame is None:
-            return np.zeros((settings.IMG_HEIGHT, settings.IMG_WIDTH, self.stack_size), dtype=np.float32)
+            return np.zeros((self.stack_size, settings.IMG_HEIGHT, settings.IMG_WIDTH), dtype=np.float32)
 
         # 1. Convert to Grayscale
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
@@ -49,11 +49,10 @@ class StateProcessor:
         else:
             self.frames.append(normalized)
             
-        # 5. Return Stack in channel-last format (H, W, C)
-        # Convert from (stack_size, height, width) to (height, width, stack_size)
-        stacked = np.array(self.frames, dtype=np.float32)  # Shape: (stack_size, height, width)
-        # Transpose to (height, width, stack_size)
-        return np.transpose(stacked, (1, 2, 0))
+        # 5. Return Stack in channel-first format (C, H, W)
+        # Stack already has shape (stack_size, height, width) which is (C, H, W)
+        stacked = np.array(self.frames, dtype=np.float32)  # Shape: (stack_size, height, width) = (C, H, W)
+        return stacked
 
     def reset(self):
         """Clear the frame stack."""

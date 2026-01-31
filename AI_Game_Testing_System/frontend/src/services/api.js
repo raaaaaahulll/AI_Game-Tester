@@ -52,3 +52,13 @@ export const getActiveWindows = async () => {
         return [];
     }
 };
+
+export const focusWindow = async (hwnd) => {
+    try {
+        const response = await axios.post(`${API_URL}/windows/${hwnd}/focus`);
+        return response.data;
+    } catch (error) {
+        console.error("Error focusing window", error);
+        throw error.response ? error.response.data : error;
+    }
+};

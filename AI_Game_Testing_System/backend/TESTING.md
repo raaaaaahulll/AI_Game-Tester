@@ -237,6 +237,190 @@ This shows:
 - Use `-x` flag to stop on first failure: `pytest -x`
 - Use `-k` to filter tests: `pytest -k "test_start"`
 
+## Racing Agent Testing
+
+### Overview
+
+This section provides specific testing and verification guidance for the SAC (Soft Actor-Critic) agent used for racing games.
+
+### Agent Configuration
+
+**Algorithm**: SAC (Soft Actor-Critic)
+- **Type**: Off-policy, actor-critic
+- **Best For**: Continuous control tasks (racing games)
+- **Action Space**: Continuous [Steering, Throttle/Brake]
+  - Steering: -1.0 (left) to 1.0 (right)
+  - Throttle: -1.0 (brake) to 1.0 (accelerate)
+
+**Environment Setup**:
+- **Observation Space**: (84, 84, 4) - Stacked grayscale frames
+- **Action Space**: Box(-1.0, 1.0, shape=(2,)) - Continuous 2D actions
+
+### Key Components
+
+#### 1. Action Executor (`action_executor.py`)
+**Status**: ✅ **FIXED** - Now implements continuous actions
+
+**Mapping**:
+- Steering < -0.15 → Press 'A' (left)
+- Steering > 0.15 → Press 'D' (right)
+- Throttle > 0.15 → Press 'W' (accelerate)
+- Throttle < -0.15 → Press 'S' (brake)
+
+#### 2. SAC Agent (`sac_agent.py`)
+**Configuration**:
+- Policy: CnnPolicy (for image inputs)
+- Buffer Size: 2,000 (reduced to save memory)
+- Learning Rate: 3e-4
+- Batch Size: 16
+
+#### 3. Game Environment (`game_env.py`)
+**Racing Configuration**:
+- Action Space: `Box(low=-1.0, high=1.0, shape=(2,))`
+- Observation: Stacked frames (84x84x4)
+
+### How to Test Racing Agent
+
+#### Step 1: Start Backend
+```bash
+cd backend
+python app.py
+```
+
+#### Step 2: Start Frontend
+```bash
+cd frontend
+npm run dev
+```
+
+#### Step 3: Test Racing Agent
+1. Open the dashboard at `http://localhost:5173`
+2. Login/Register
+3. Select **Genre: Racing**
+4. Select a game window (or use auto-detect)
+5. Click **"Start Testing"**
+
+#### Step 4: Monitor Status
+- Check the status indicator - should show "Training SACAgent"
+- Watch metrics:
+  - **State Coverage**: Should increase as agent explores
+  - **Total Steps**: Should increment
+  - **Active Model**: Should show "SACAgent"
+
+### Expected Behavior
+
+#### ✅ Working Correctly If:
+1. Status changes to "Training SACAgent"
+2. Metrics start updating (coverage, steps)
+3. No error messages appear
+4. Game window receives keyboard inputs (W, A, S, D keys)
+5. Agent explores the game (coverage increases)
+
+#### ❌ Issues to Watch For:
+
+1. **Memory Error**:
+   - Error: "Unable to allocate X GiB"
+   - **Solution**: Already fixed - buffer_size reduced to 2,000
+   - If still occurs, check if old code is running
+
+2. **No Actions Executed**:
+   - Game doesn't respond to inputs
+   - **Check**: `apply_continuous_action` implementation
+   - **Verify**: Game window is focused
+
+3. **Observation Space Mismatch**:
+   - Error about observation shape
+   - **Status**: Should be fixed - using (C, H, W) format
+
+### Verification Checklist
+
+- [ ] Backend starts without errors
+- [ ] Frontend connects to backend
+- [ ] Racing genre is selectable
+- [ ] SACAgent is selected automatically
+- [ ] Training starts (status = "Training SACAgent")
+- [ ] Metrics update in real-time
+- [ ] Game window receives keyboard inputs
+- [ ] Coverage increases over time
+- [ ] No crashes or errors in logs
+
+### Debugging Racing Agent
+
+#### Check Backend Logs
+```bash
+tail -f backend/logs/app.log
+```
+
+Look for:
+- "Selected agent: SACAgent" ✅
+- "Starting training for X timesteps" ✅
+- "Using Windows API PostMessage/SendMessage for key sending" ✅
+- Any error messages ❌
+
+#### Check Frontend Console
+- Open browser DevTools (F12)
+- Check Console tab for errors
+- Check Network tab for API calls
+
+#### Test Action Execution
+1. Manually test keyboard inputs in the game
+2. Verify W, A, S, D keys work
+3. Check if game responds to continuous key presses
+
+### Common Issues & Solutions
+
+#### Issue 1: Agent Not Initializing
+**Symptoms**: Status shows "Error" immediately
+**Check**:
+- Memory available (need at least 2GB free)
+- PyTorch installed correctly
+- Stable-Baselines3 version compatible
+
+#### Issue 2: Actions Not Working
+**Symptoms**: Game doesn't respond
+**Check**:
+- Game window is focused
+- Game accepts keyboard input
+- Action executor is being called (check logs)
+- Game is in playable state (not in menu)
+
+#### Issue 3: Low Coverage
+**Symptoms**: Coverage stays at 0 or very low
+**Possible Causes**:
+- Agent not exploring (stuck in one state)
+- Reward function not encouraging exploration
+- Game not responding to actions
+
+### Performance Metrics
+
+#### Expected Values (After Training)
+- **Coverage**: Should increase steadily
+- **Steps**: Should reach thousands
+- **Crashes**: May detect crashes (this is good - means testing works!)
+
+### For Project Review
+
+#### What to Demonstrate:
+1. ✅ **Agent Selection**: Show that SACAgent is automatically selected for racing
+2. ✅ **Action Execution**: Show that continuous actions are being executed
+3. ✅ **Learning Progress**: Show metrics improving over time
+4. ✅ **State Coverage**: Demonstrate that agent explores different game states
+5. ✅ **Crash Detection**: Show that bugs are detected (if any occur)
+
+#### Key Points to Explain:
+- **Why SAC?**: Best for continuous control (steering, throttle)
+- **Action Space**: Continuous 2D vector vs discrete actions
+- **Observation**: Visual input (stacked frames)
+- **Learning**: Agent learns from experience to maximize coverage
+
+### Code Locations
+
+- **SAC Agent**: `backend/services/agents/sac_agent.py`
+- **Action Executor**: `backend/services/env/action_executor.py`
+- **Game Environment**: `backend/services/env/game_env.py`
+- **Strategy Selector**: `backend/services/strategy_selector.py`
+- **RL Controller**: `backend/controllers/rl_controller.py`
+
 ## Notes
 
 - All tests use mocks to prevent actual test execution

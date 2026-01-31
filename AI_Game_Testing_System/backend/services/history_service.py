@@ -1,10 +1,11 @@
 """
 Test History Manager for storing and retrieving past test run results.
 
-Provides persistent storage of test results with timestamps, metrics, and metadata.
+Uses SQLite database for persistent storage of test results with timestamps, metrics, and metadata.
 """
-import json
+import sqlite3
 import threading
+import json
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Any
@@ -21,7 +22,7 @@ class TestHistoryManager:
     """
     Thread-safe manager for test history storage and retrieval.
     
-    Stores test results in JSON format with unique IDs and timestamps.
+    Uses SQLite database for storing test results.
     """
     _instance: Optional['TestHistoryManager'] = None
     _lock = threading.Lock()
@@ -36,62 +37,136 @@ class TestHistoryManager:
         return cls._instance
 
     def _initialize(self) -> None:
-        """Initialize the history manager."""
-        self.history_file = settings.LOGS_DIR / "test_history.json"
+        """Initialize the history manager and database."""
+        self.db_path = settings.DATABASE_PATH
         self._lock = threading.Lock()
-        self._ensure_history_file()
+        self._ensure_database()
 
-    def _ensure_history_file(self) -> None:
-        """Ensure history file exists with empty list."""
+    def _get_connection(self) -> sqlite3.Connection:
+        """Get a database connection."""
+        conn = sqlite3.connect(self.db_path, check_same_thread=False)
+        conn.row_factory = sqlite3.Row  # Enable column access by name
+        return conn
+
+    def _ensure_database(self) -> None:
+        """Ensure database exists with proper schema."""
         try:
-            self.history_file.parent.mkdir(parents=True, exist_ok=True)
-            if not self.history_file.exists():
-                with open(self.history_file, 'w', encoding='utf-8') as f:
-                    json.dump([], f, indent=2, ensure_ascii=False)
-                logger.info(f"Created test history file: {self.history_file}")
+            self.db_path.parent.mkdir(parents=True, exist_ok=True)
+            
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                
+                # Create test_history table
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS test_history (
+                        id TEXT PRIMARY KEY,
+                        timestamp TEXT NOT NULL,
+                        genre TEXT NOT NULL,
+                        algorithm TEXT NOT NULL,
+                        status TEXT NOT NULL,
+                        duration_seconds REAL,
+                        coverage REAL DEFAULT 0.0,
+                        crashes INTEGER DEFAULT 0,
+                        fps REAL DEFAULT 0.0,
+                        total_steps INTEGER DEFAULT 0,
+                        reward_mean REAL DEFAULT 0.0,
+                        notes TEXT DEFAULT '',
+                        screenshot_paths TEXT DEFAULT '[]',
+                        bug_screenshot_paths TEXT DEFAULT '[]',
+                        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
+                
+                # Create indexes for faster queries
+                cursor.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_timestamp ON test_history(timestamp DESC)
+                """)
+                cursor.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_genre ON test_history(genre)
+                """)
+                cursor.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_algorithm ON test_history(algorithm)
+                """)
+                cursor.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_status ON test_history(status)
+                """)
+                
+                # Add screenshot columns if they don't exist (for existing databases)
+                try:
+                    cursor.execute("ALTER TABLE test_history ADD COLUMN screenshot_paths TEXT DEFAULT '[]'")
+                except sqlite3.OperationalError:
+                    pass  # Column already exists
+                
+                try:
+                    cursor.execute("ALTER TABLE test_history ADD COLUMN bug_screenshot_paths TEXT DEFAULT '[]'")
+                except sqlite3.OperationalError:
+                    pass  # Column already exists
+                
+                conn.commit()
+                logger.info(f"Database initialized: {self.db_path}")
+                
+                # Migrate existing JSON data if it exists
+                self._migrate_json_to_sqlite()
+                
         except Exception as e:
-            logger.error(f"Error ensuring history file exists: {e}", exc_info=True)
+            logger.error(f"Error initializing database: {e}", exc_info=True)
+            raise MetricsError(f"Failed to initialize database: {e}")
 
-    def _load_history(self) -> List[Dict[str, Any]]:
-        """
-        Load test history from disk.
+    def _migrate_json_to_sqlite(self) -> None:
+        """Migrate existing JSON data to SQLite if JSON file exists."""
+        json_file = settings.LOGS_DIR / "test_history.json"
         
-        Returns:
-            List of test history entries
-        """
-        try:
-            if not self.history_file.exists():
-                return []
-            
-            with open(self.history_file, 'r', encoding='utf-8') as f:
-                history = json.load(f)
-            
-            if not isinstance(history, list):
-                logger.warning("History file corrupted, resetting")
-                return []
-            
-            return history
-        except json.JSONDecodeError as e:
-            logger.error(f"Invalid JSON in history file: {e}", exc_info=True)
-            return []
-        except Exception as e:
-            logger.error(f"Error loading history: {e}", exc_info=True)
-            return []
-
-    def _save_history(self, history: List[Dict[str, Any]]) -> None:
-        """
-        Save test history to disk.
+        if not json_file.exists():
+            return
         
-        Args:
-            history: List of test history entries
-        """
         try:
-            with open(self.history_file, 'w', encoding='utf-8') as f:
-                json.dump(history, f, indent=2, ensure_ascii=False)
-            logger.debug(f"Saved {len(history)} test history entries")
+            logger.info("Found existing JSON file, migrating to SQLite...")
+            
+            # Check if database already has data
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT COUNT(*) FROM test_history")
+                count = cursor.fetchone()[0]
+                
+                if count > 0:
+                    logger.info("Database already has data, skipping migration")
+                    return
+            
+            # Load JSON data
+            with open(json_file, 'r', encoding='utf-8') as f:
+                json_data = json.load(f)
+            
+            if not isinstance(json_data, list):
+                logger.warning("JSON file is not a list, skipping migration")
+                return
+            
+            # Migrate each entry
+            migrated = 0
+            for entry in json_data:
+                try:
+                    metrics = entry.get("metrics", {})
+                    self.save_test_result(
+                        genre=entry.get("genre", "unknown"),
+                        algorithm=entry.get("algorithm", "Unknown"),
+                        metrics=metrics,
+                        status=entry.get("status", "Unknown"),
+                        duration_seconds=entry.get("duration_seconds"),
+                        notes=entry.get("notes", ""),
+                        test_id=entry.get("id")  # Preserve original ID
+                    )
+                    migrated += 1
+                except Exception as e:
+                    logger.warning(f"Failed to migrate entry {entry.get('id')}: {e}")
+            
+            logger.info(f"Migrated {migrated} entries from JSON to SQLite")
+            
+            # Backup old JSON file
+            backup_file = json_file.with_suffix('.json.backup')
+            json_file.rename(backup_file)
+            logger.info(f"Backed up JSON file to: {backup_file}")
+            
         except Exception as e:
-            logger.error(f"Error saving history: {e}", exc_info=True)
-            raise MetricsError(f"Failed to save test history: {e}")
+            logger.error(f"Error migrating JSON data: {e}", exc_info=True)
 
     def save_test_result(
         self,
@@ -100,10 +175,13 @@ class TestHistoryManager:
         metrics: Dict[str, Any],
         status: str,
         duration_seconds: Optional[float] = None,
-        notes: Optional[str] = None
+        notes: Optional[str] = None,
+        test_id: Optional[str] = None,
+        screenshot_paths: Optional[List[str]] = None,
+        bug_screenshot_paths: Optional[List[str]] = None
     ) -> str:
         """
-        Save a test result to history.
+        Save a test result to database.
         
         Args:
             genre: Game genre tested
@@ -112,37 +190,53 @@ class TestHistoryManager:
             status: Final test status
             duration_seconds: Test duration in seconds
             notes: Optional notes about the test
+            test_id: Optional test ID (for migration)
             
         Returns:
             Test ID (UUID string)
         """
-        test_id = str(uuid4())
+        if test_id is None:
+            test_id = str(uuid4())
+        
         timestamp = datetime.utcnow().isoformat()
         
-        test_entry = {
-            "id": test_id,
-            "timestamp": timestamp,
-            "genre": genre,
-            "algorithm": algorithm,
-            "status": status,
-            "duration_seconds": duration_seconds,
-            "metrics": {
-                "coverage": metrics.get("coverage", 0.0),
-                "crashes": metrics.get("crashes", 0),
-                "fps": metrics.get("fps", 0.0),
-                "total_steps": metrics.get("total_steps", 0),
-                "reward_mean": metrics.get("reward_mean", 0.0),
-            },
-            "notes": notes or ""
-        }
-        
-        with self._lock:
-            history = self._load_history()
-            history.insert(0, test_entry)  # Add to beginning (most recent first)
-            self._save_history(history)
-        
-        logger.info(f"Saved test result: {test_id} ({genre}, {algorithm}, {status})")
-        return test_id
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                # Convert lists to JSON strings for storage
+                screenshot_paths_json = json.dumps(screenshot_paths or [])
+                bug_screenshot_paths_json = json.dumps(bug_screenshot_paths or [])
+                
+                cursor.execute("""
+                    INSERT INTO test_history (
+                        id, timestamp, genre, algorithm, status, duration_seconds,
+                        coverage, crashes, fps, total_steps, reward_mean, notes,
+                        screenshot_paths, bug_screenshot_paths
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    test_id,
+                    timestamp,
+                    genre,
+                    algorithm,
+                    status,
+                    duration_seconds,
+                    metrics.get("coverage", 0.0),
+                    metrics.get("crashes", 0),
+                    metrics.get("fps", 0.0),
+                    metrics.get("total_steps", 0),
+                    metrics.get("reward_mean", 0.0),
+                    notes or "",
+                    screenshot_paths_json,
+                    bug_screenshot_paths_json
+                ))
+                conn.commit()
+            
+            logger.info(f"Saved test result: {test_id} ({genre}, {algorithm}, {status})")
+            return test_id
+            
+        except Exception as e:
+            logger.error(f"Error saving test result: {e}", exc_info=True)
+            raise MetricsError(f"Failed to save test result: {e}")
 
     def get_test(self, test_id: str) -> Optional[Dict[str, Any]]:
         """
@@ -154,12 +248,21 @@ class TestHistoryManager:
         Returns:
             Test entry dictionary or None if not found
         """
-        with self._lock:
-            history = self._load_history()
-            for entry in history:
-                if entry.get("id") == test_id:
-                    return entry
-        return None
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT * FROM test_history WHERE id = ?
+                """, (test_id,))
+                
+                row = cursor.fetchone()
+                if row:
+                    return self._row_to_dict(row)
+                return None
+                
+        except Exception as e:
+            logger.error(f"Error getting test: {e}", exc_info=True)
+            return None
 
     def list_tests(
         self,
@@ -180,23 +283,38 @@ class TestHistoryManager:
         Returns:
             List of test entries (most recent first)
         """
-        with self._lock:
-            history = self._load_history()
+        try:
+            query = "SELECT * FROM test_history WHERE 1=1"
+            params = []
             
-            # Apply filters
-            filtered = history
             if genre:
-                filtered = [e for e in filtered if e.get("genre", "").lower() == genre.lower()]
+                query += " AND LOWER(genre) = LOWER(?)"
+                params.append(genre)
+            
             if algorithm:
-                filtered = [e for e in filtered if e.get("algorithm", "").lower() == algorithm.lower()]
+                query += " AND LOWER(algorithm) = LOWER(?)"
+                params.append(algorithm)
+            
             if status:
-                filtered = [e for e in filtered if e.get("status", "").lower() == status.lower()]
+                query += " AND LOWER(status) = LOWER(?)"
+                params.append(status)
             
-            # Apply limit
+            query += " ORDER BY timestamp DESC"
+            
             if limit and limit > 0:
-                filtered = filtered[:limit]
+                query += " LIMIT ?"
+                params.append(limit)
             
-            return filtered
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(query, params)
+                rows = cursor.fetchall()
+                
+                return [self._row_to_dict(row) for row in rows]
+                
+        except Exception as e:
+            logger.error(f"Error listing tests: {e}", exc_info=True)
+            return []
 
     def delete_test(self, test_id: str) -> bool:
         """
@@ -208,16 +326,19 @@ class TestHistoryManager:
         Returns:
             True if deleted, False if not found
         """
-        with self._lock:
-            history = self._load_history()
-            original_count = len(history)
-            history = [e for e in history if e.get("id") != test_id]
-            
-            if len(history) < original_count:
-                self._save_history(history)
-                logger.info(f"Deleted test result: {test_id}")
-                return True
-            
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM test_history WHERE id = ?", (test_id,))
+                conn.commit()
+                
+                if cursor.rowcount > 0:
+                    logger.info(f"Deleted test result: {test_id}")
+                    return True
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error deleting test: {e}", exc_info=True)
             return False
 
     def get_statistics(self) -> Dict[str, Any]:
@@ -227,65 +348,85 @@ class TestHistoryManager:
         Returns:
             Dictionary with statistics
         """
-        with self._lock:
-            history = self._load_history()
-            
-            if not history:
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                
+                # Total tests
+                cursor.execute("SELECT COUNT(*) FROM test_history")
+                total_tests = cursor.fetchone()[0]
+                
+                if total_tests == 0:
+                    return {
+                        "total_tests": 0,
+                        "by_genre": {},
+                        "by_algorithm": {},
+                        "by_status": {},
+                        "average_coverage": 0.0,
+                        "average_crashes": 0.0,
+                        "total_crashes": 0
+                    }
+                
+                # Count by genre
+                cursor.execute("""
+                    SELECT genre, COUNT(*) as count 
+                    FROM test_history 
+                    GROUP BY genre
+                """)
+                by_genre = {row[0]: row[1] for row in cursor.fetchall()}
+                
+                # Count by algorithm
+                cursor.execute("""
+                    SELECT algorithm, COUNT(*) as count 
+                    FROM test_history 
+                    GROUP BY algorithm
+                """)
+                by_algorithm = {row[0]: row[1] for row in cursor.fetchall()}
+                
+                # Count by status
+                cursor.execute("""
+                    SELECT status, COUNT(*) as count 
+                    FROM test_history 
+                    GROUP BY status
+                """)
+                by_status = {row[0]: row[1] for row in cursor.fetchall()}
+                
+                # Average metrics
+                cursor.execute("""
+                    SELECT 
+                        AVG(coverage) as avg_coverage,
+                        AVG(crashes) as avg_crashes,
+                        SUM(crashes) as total_crashes
+                    FROM test_history
+                    WHERE coverage IS NOT NULL OR crashes IS NOT NULL
+                """)
+                metrics_row = cursor.fetchone()
+                
+                avg_coverage = metrics_row[0] if metrics_row[0] is not None else 0.0
+                avg_crashes = metrics_row[1] if metrics_row[1] is not None else 0.0
+                total_crashes = metrics_row[2] if metrics_row[2] is not None else 0
+                
                 return {
-                    "total_tests": 0,
-                    "by_genre": {},
-                    "by_algorithm": {},
-                    "by_status": {},
-                    "average_coverage": 0.0,
-                    "average_crashes": 0.0,
-                    "total_crashes": 0
+                    "total_tests": total_tests,
+                    "by_genre": by_genre,
+                    "by_algorithm": by_algorithm,
+                    "by_status": by_status,
+                    "average_coverage": round(avg_coverage, 2),
+                    "average_crashes": round(avg_crashes, 2),
+                    "total_crashes": total_crashes
                 }
-            
-            # Calculate statistics
-            stats = {
-                "total_tests": len(history),
+                
+        except Exception as e:
+            logger.error(f"Error getting statistics: {e}", exc_info=True)
+            return {
+                "total_tests": 0,
                 "by_genre": {},
                 "by_algorithm": {},
                 "by_status": {},
-                "total_coverage": 0.0,
-                "total_crashes": 0,
-                "tests_with_metrics": 0
+                "average_coverage": 0.0,
+                "average_crashes": 0.0,
+                "total_crashes": 0
             }
-            
-            for entry in history:
-                # Count by genre
-                genre = entry.get("genre", "Unknown")
-                stats["by_genre"][genre] = stats["by_genre"].get(genre, 0) + 1
-                
-                # Count by algorithm
-                algorithm = entry.get("algorithm", "Unknown")
-                stats["by_algorithm"][algorithm] = stats["by_algorithm"].get(algorithm, 0) + 1
-                
-                # Count by status
-                status = entry.get("status", "Unknown")
-                stats["by_status"][status] = stats["by_status"].get(status, 0) + 1
-                
-                # Aggregate metrics
-                metrics = entry.get("metrics", {})
-                if metrics:
-                    stats["tests_with_metrics"] += 1
-                    stats["total_coverage"] += metrics.get("coverage", 0.0)
-                    stats["total_crashes"] += metrics.get("crashes", 0)
-            
-            # Calculate averages
-            if stats["tests_with_metrics"] > 0:
-                stats["average_coverage"] = stats["total_coverage"] / stats["tests_with_metrics"]
-                stats["average_crashes"] = stats["total_crashes"] / stats["tests_with_metrics"]
-            else:
-                stats["average_coverage"] = 0.0
-                stats["average_crashes"] = 0.0
-            
-            # Remove temporary fields
-            del stats["total_coverage"]
-            del stats["tests_with_metrics"]
-            stats["total_crashes"] = stats["total_crashes"]
-            
-            return stats
 
     def clear_history(self) -> int:
         """
@@ -294,14 +435,54 @@ class TestHistoryManager:
         Returns:
             Number of entries deleted
         """
-        with self._lock:
-            history = self._load_history()
-            count = len(history)
-            self._save_history([])
-            logger.info(f"Cleared {count} test history entries")
-            return count
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT COUNT(*) FROM test_history")
+                count = cursor.fetchone()[0]
+                
+                cursor.execute("DELETE FROM test_history")
+                conn.commit()
+                
+                logger.info(f"Cleared {count} test history entries")
+                return count
+                
+        except Exception as e:
+            logger.error(f"Error clearing history: {e}", exc_info=True)
+            return 0
+
+    def _row_to_dict(self, row: sqlite3.Row) -> Dict[str, Any]:
+        """Convert a database row to dictionary format."""
+        # Parse screenshot paths from JSON
+        screenshot_paths = []
+        bug_screenshot_paths = []
+        try:
+            if row.get("screenshot_paths"):
+                screenshot_paths = json.loads(row["screenshot_paths"])
+            if row.get("bug_screenshot_paths"):
+                bug_screenshot_paths = json.loads(row["bug_screenshot_paths"])
+        except (json.JSONDecodeError, TypeError):
+            pass
+        
+        return {
+            "id": row["id"],
+            "timestamp": row["timestamp"],
+            "genre": row["genre"],
+            "algorithm": row["algorithm"],
+            "status": row["status"],
+            "duration_seconds": row["duration_seconds"],
+            "metrics": {
+                "coverage": row["coverage"],
+                "crashes": row["crashes"],
+                "fps": row["fps"],
+                "total_steps": row["total_steps"],
+                "reward_mean": row["reward_mean"]
+            },
+            "notes": row["notes"],
+            "screenshot_paths": screenshot_paths,
+            "bug_screenshot_paths": bug_screenshot_paths
+        }
 
 
 # Global Instance (singleton)
 test_history_manager = TestHistoryManager()
-

@@ -119,7 +119,11 @@ class RLController:
             # Initialize Environment
             logger.info(f"Initializing game environment for genre: {genre}")
             try:
-                self.env = GameEnv(config={"genre": genre})
+                env_config = {"genre": genre}
+                if self._selected_window_hwnd is not None:
+                    env_config["window_hwnd"] = self._selected_window_hwnd
+                    logger.info(f"Passing window handle {self._selected_window_hwnd} to environment")
+                self.env = GameEnv(config=env_config)
                 logger.info("Game environment initialized successfully")
             except Exception as e:
                 logger.error(f"Failed to initialize environment: {e}", exc_info=True)
@@ -336,11 +340,24 @@ class RLController:
             self._stop_focus_monitoring()
             
             # Wait for thread to finish (with timeout)
-            self.thread.join(timeout=10.0)
+            # Increase timeout and add cleanup
+            self.thread.join(timeout=15.0)
             
             if self.thread.is_alive():
-                logger.warning("Training thread did not stop within timeout")
-                return False, "Stop request sent, but thread is still running"
+                logger.warning("Training thread did not stop within timeout - forcing cleanup")
+                # Force cleanup even if thread is still alive
+                try:
+                    if self.env:
+                        self.env.close()
+                except Exception as e:
+                    logger.warning(f"Error during forced cleanup: {e}")
+                
+                # Mark thread as stopped (even if still running)
+                self.thread = None
+                metrics_collector.update("status", "Stopped")
+                metrics_collector.update("window_focused", False)
+                logger.info("Test stopped (forced cleanup)")
+                return True, "Testing stopped (cleanup completed)"
             
             # Reset status to Idle after successful stop
             metrics_collector.update("status", "Idle")
